@@ -23,7 +23,6 @@ func getPackets(packetSource *gopacket.PacketSource, hasBeenPicked chan bool, in
 }
 
 func openPacketSource(interfaceName string) bool {
-  fmt.Println("Testing interface ", interfaceName)
   hasBeenPicked := make(chan bool)
   if handle, err := pcap.OpenLive(interfaceName, 1600, true, pcap.BlockForever); err != nil {
     return false;
@@ -51,6 +50,7 @@ func main() {
     networkInt := networkInt
 
     go func() {
+      log.Println("Testing interface ", networkInt.Name, "...")
       defer detectPacketActivityGrp.Done()
       isActive := openPacketSource(networkInt.Name)
       deviceScanned += 1
