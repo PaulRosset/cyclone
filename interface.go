@@ -7,9 +7,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
 )
+
+type PacketInfos struct {
+  SrcAddr []byte
+  DestAddr []byte
+  Length uint64
+  GlobalLength uint64
+}
+
+const FILTER = "tcp && port 80 or port 443"
 
 func timeout(hasBeenPicked chan bool) {
   time.Sleep(2 * time.Second)
@@ -57,7 +67,7 @@ func main() {
     go func() {
       log.Println("Testing interface ", networkInt.Name, "...")
       defer detectPacketActivityGrp.Done()
-      isActive := openPacketSource(networkInt.Name, "tcp && port 80 or port 443")
+      isActive := openPacketSource(networkInt.Name, FILTER)
       deviceScanned += 1
       if isActive {
         activeInterfaces = append(activeInterfaces, networkInt)
@@ -69,5 +79,32 @@ func main() {
   log.Println("Device scanned:", deviceScanned, "/", len(ints))
   log.Println("Device Actives:", len(activeInterfaces), "/", len(ints))
 
-  GetPacketsUnderMonitoring(activeInterfaces, "tcp && port 80 or port 443")
+  var packetInfos = make(chan PacketInfos) 
+  go GetPacketsUnderMonitoring(activeInterfaces, packetInfos, FILTER)
+  for {
+    packetInfo, ok := <-packetInfos
+    if ok == false {
+      log.Println("Channel close", ok)
+    }
+    log.Println(humanize.Bytes(packetInfo.GlobalLength))
+    // var srcAddrFormated [4]string;
+		// var destAddrFormated [4]string;
+		// for i, data := range srcAddr {
+		// 	srcAddrFormated[i] = strconv.Itoa(int(data))
+		// }
+		// srcNets, err := net.LookupAddr(strings.Join(srcAddrFormated[:], "."))
+		// if err != nil {
+		// 	log.Println(err)
+		// }
+		// fmt.Println(srcNets)
+		// for i, data := range destAddr {
+		// 	destAddrFormated[i] = strconv.Itoa(int(data))
+		// }
+		// destNets, err := net.LookupAddr(strings.Join(destAddrFormated[:], "."))
+		// if err != nil {
+		// 	log.Println(err)
+		// }
+		// fmt.Println("Src address:", srcNets)
+		// fmt.Println("Destination address:", destNets)
+  }
 }
