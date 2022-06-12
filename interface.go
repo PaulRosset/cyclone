@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -32,6 +34,14 @@ func getPackets(packetSource *gopacket.PacketSource, hasBeenPicked chan bool, in
   }
 }
 
+func openFile() *os.File {
+  f, err := os.OpenFile("/tmp/cyclone", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+  if err != nil {
+	  log.Println(err)
+  }
+  return f
+}
+
 func openPacketSource(interfaceName string, BFPFilter string) bool {
   hasBeenPicked := make(chan bool)
   if handle, err := pcap.OpenLive(interfaceName, 1600, true, pcap.BlockForever); err != nil {
@@ -48,6 +58,21 @@ func openPacketSource(interfaceName string, BFPFilter string) bool {
     isActive := <-hasBeenPicked
     return isActive
   }
+}
+
+func updateLocalFile(fileDescriptor *os.File, dataToInsert uint64) {
+  now := time.Now()
+  formattedDate := fmt.Sprintf("%d/%d/%d %d:%d:%d",
+		now.Year(),
+		now.Month(),
+		now.Day(),
+		now.Hour(),
+		now.Hour(),
+		now.Second())
+  if _, err := fileDescriptor.WriteString(formattedDate + " " + strconv.FormatUint(dataToInsert, 10) + "\n"); err != nil {
+    log.Println(err)
+  }
+  log.Println("Writting to file")
 }
 
 func main() {
@@ -79,17 +104,34 @@ func main() {
   log.Println("Device scanned:", deviceScanned, "/", len(ints))
   log.Println("Device Actives:", len(activeInterfaces), "/", len(ints))
 
-  var packetInfos = make(chan PacketInfos) 
+
+  fileDescriptor := openFile()
+  defer fileDescriptor.Close()
+  var packetInfos = make(chan PacketInfos)
+  var lastValue string = "0 kB"
+  var globalLength uint64 = 0
+  var lastValueInserted uint64 = 0
   go GetPacketsUnderMonitoring(activeInterfaces, packetInfos, FILTER)
+  go func() {
+    for {
+      <-time.After(10 * time.Second)
+      updateLocalFile(fileDescriptor, globalLength - lastValueInserted)
+      lastValueInserted = globalLength
+    }
+  }()
   for {
     packetInfo, ok := <-packetInfos
+    if lastValue != humanize.Bytes(packetInfo.GlobalLength){
+      log.Println(humanize.Bytes(packetInfo.GlobalLength))
+    } 
+    lastValue = humanize.Bytes(packetInfo.GlobalLength)
+    globalLength = packetInfo.GlobalLength
     if ok == false {
       log.Println("Channel close", ok)
     }
-    log.Println(humanize.Bytes(packetInfo.GlobalLength))
     // var srcAddrFormated [4]string;
-		// var destAddrFormated [4]string;
-		// for i, data := range srcAddr {
+		// // var destAddrFormated [4]string;
+		// for i, data := range packetInfo.SrcAddr {
 		// 	srcAddrFormated[i] = strconv.Itoa(int(data))
 		// }
 		// srcNets, err := net.LookupAddr(strings.Join(srcAddrFormated[:], "."))
